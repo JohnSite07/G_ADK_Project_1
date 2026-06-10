@@ -1,0 +1,3 @@
+# Project-scoped Claude Code subagents go here as <name>.md files
+# (each with YAML frontmatter: name, description, optional tools/model).
+# Placeholder so the empty folder is tracked by git.
