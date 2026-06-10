@@ -14,6 +14,9 @@ venv/
 # --- ADK runtime ---
 .adk/session.db
 *.db
+# live progress feed (regenerable telemetry, written by agent.py callbacks)
+.progress.jsonl
+**/.progress.jsonl
 
 # --- Node / Next.js (regenerable) ---
 node_modules/

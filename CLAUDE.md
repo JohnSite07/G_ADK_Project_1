@@ -64,6 +64,19 @@ python run_pipeline.py   # full studio_pipeline on a default/CLI brief
 python run_continue.py   # RESUME from existing workspace/docs/ (skips requirements+design)
 ```
 
+**Watch the agents work in real time** (the `adk web` Events tab is silent until the whole pipeline returns
+because it runs as one nested `AgentTool` — see the UI-visibility lesson). Lifecycle callbacks in `agent.py`
+append every agent/tool start & finish to `workspace/.progress.jsonl`. In a **second terminal**, during any
+run (`adk web` or a console harness):
+
+```powershell
+python watch_progress.py                              # pretty, indented live tree (recommended)
+Get-Content .\workspace\.progress.jsonl -Wait -Tail 0  # or raw JSONL via PowerShell's tail -f
+```
+
+`watch_progress.py` follows only new activity by default; `--all` replays the feed first, `--clear` truncates
+it before following. The feed is git-ignored (`*.jsonl` under workspace is regenerable telemetry).
+
 There is no test/lint setup. If one is added, document the exact commands here.
 
 ## Architecture (`agent.py`)
@@ -99,6 +112,16 @@ the `docs/` files.
   single dedicated worker thread (see lesson below); async tool wrappers hand work to that thread.
 
 Tool descriptions/docstrings are what the model routes on — keep them specific and action-oriented.
+
+### Live progress feed (observability)
+`_register_progress_callbacks(root_agent)` (called at module load) attaches `before/after_agent_callback` and
+`before/after_tool_callback` to **every** agent reachable from the root (walking `sub_agents` + AgentTool-
+wrapped agents, de-duped). Each callback appends one JSON line (`{t, kind, name, depth, …}`) to
+`workspace/.progress.jsonl` via `_feed_write`. Because callbacks fire **in-process as execution happens** —
+independent of the `AgentTool` nesting that hides inner events from the dev UI — the feed surfaces the whole
+pipeline live. Writes swallow all errors (telemetry must never break a run) and a `depth` counter records
+agent nesting so `watch_progress.py` can render an indented tree. The shared agent instances mean the console
+harnesses inherit the callbacks automatically.
 
 ### ADK version note
 `SequentialAgent`/`LoopAgent` are **deprecated in 2.2.0** (favoring graph `Workflow`) but kept deliberately:
@@ -144,8 +167,14 @@ adding it to a second pipeline (see `run_continue.py`, which detaches agents to 
   loop. A new playwright version can also "vanish" if installed into a different interpreter than the one
   adk runs on — install into the same Python that has `google-adk` (the default user-site interpreter).
 - **UI visibility**: because `studio_pipeline` runs as an `AgentTool` on the director, its internal events do
-  NOT appear in the dev UI **Events** tab (only the outer tool call/return do) — use the **Traces** tab (full
-  nested span tree), the **State** tab, or watch `workspace/` for live progress. This is expected, not a bug.
+  NOT appear in the dev UI **Events** tab (only the outer tool call/return do) — the Events tab stays silent
+  until the whole pipeline returns once. This is expected, not a bug. → **Fixed for observation** by the live
+  progress feed: lifecycle callbacks write `workspace/.progress.jsonl`; run `python watch_progress.py` (or
+  `Get-Content .\workspace\.progress.jsonl -Wait`) in a second terminal to watch the agents in real time. The
+  dev UI's **Traces** tab (full nested span tree) and **State** tab (whiteboard keys) remain useful too.
+  (Callbacks were chosen over restructuring the pipeline into a transfer-based `sub_agent` — which would
+  stream to the Events tab natively — because that changes the director's control flow; the feed is zero-risk
+  and works in every harness, not just `adk web`.)
 - **Director reporting bug**: `studio_director` had no file tools and claimed it would "monitor" an
   already-finished synchronous run. → Gave it `FILE_TOOLS` and instructed it that tool calls are synchronous
   (when they return, work is done) so it reads the report files and summarizes real results.

@@ -45,9 +45,11 @@ from __future__ import annotations
 import asyncio
 import atexit
 import concurrent.futures
+import json
 import os
 import socket
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -95,6 +97,87 @@ def _safe(path: str) -> Path:
     if target != WORKSPACE and WORKSPACE not in target.parents:
         raise ValueError(f"Path '{path}' escapes the workspace.")
     return target
+
+
+# --------------------------------------------------------------------------- #
+# Live progress feed                                                           #
+# --------------------------------------------------------------------------- #
+# The `adk web` Events tab only shows the OUTER event stream, so while the whole
+# build runs as a single nested `AgentTool` call (studio_pipeline) it appears
+# silent until the tool returns. These lifecycle callbacks sidestep that: they
+# fire IN-PROCESS as each agent/tool starts and finishes — regardless of how
+# deeply nested the AgentTool is — and append one JSON line per event to
+# `workspace/.progress.jsonl`. Tail that file (or run `watch_progress.py`) in a
+# second terminal to watch the agents work in real time. Telemetry only: a feed
+# write must NEVER raise into a run, so every path here swallows errors.
+PROGRESS_FEED = WORKSPACE / ".progress.jsonl"
+_FEED_LOCK = threading.Lock()
+_FEED_DEPTH = [0]  # current agent-nesting depth, maintained by the writer process
+
+
+def _feed_write(kind: str, name: str, depth: int, **extra) -> None:
+    rec = {"t": time.strftime("%H:%M:%S"), "kind": kind, "name": name, "depth": depth}
+    rec.update({k: v for k, v in extra.items() if v is not None})
+    try:
+        with _FEED_LOCK, PROGRESS_FEED.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001 — telemetry must never break a run
+        pass
+
+
+def _on_agent_start(callback_context):
+    depth = _FEED_DEPTH[0]
+    _feed_write("agent_start", getattr(callback_context, "agent_name", "?"), depth,
+                invocation=getattr(callback_context, "invocation_id", None))
+    _FEED_DEPTH[0] = depth + 1
+    return None  # returning Content would override the agent's output
+
+
+def _on_agent_end(callback_context):
+    _FEED_DEPTH[0] = max(0, _FEED_DEPTH[0] - 1)
+    _feed_write("agent_end", getattr(callback_context, "agent_name", "?"), _FEED_DEPTH[0],
+                invocation=getattr(callback_context, "invocation_id", None))
+    return None
+
+
+def _on_tool_start(tool, args, tool_context):
+    _feed_write("tool_start", getattr(tool, "name", str(tool)), _FEED_DEPTH[0],
+                agent=getattr(tool_context, "agent_name", None))
+    return None  # returning a dict would short-circuit the tool
+
+
+def _on_tool_end(tool, args, tool_context, tool_response):
+    _feed_write("tool_end", getattr(tool, "name", str(tool)), _FEED_DEPTH[0],
+                agent=getattr(tool_context, "agent_name", None))
+    return None
+
+
+def _register_progress_callbacks(agent, _seen=None) -> None:
+    """Attach the feed callbacks to `agent` and everything reachable from it
+    (sub_agents + AgentTool-wrapped agents), de-duplicating shared instances so
+    an agent referenced from two places (e.g. frontend_lead) is wired once."""
+    if _seen is None:
+        _seen = set()
+    if id(agent) in _seen:
+        return
+    _seen.add(id(agent))
+    try:  # every BaseAgent supports the agent-lifecycle callbacks
+        agent.before_agent_callback = _on_agent_start
+        agent.after_agent_callback = _on_agent_end
+    except Exception:  # noqa: BLE001
+        pass
+    if hasattr(agent, "before_tool_callback"):  # LlmAgents only
+        try:
+            agent.before_tool_callback = _on_tool_start
+            agent.after_tool_callback = _on_tool_end
+        except Exception:  # noqa: BLE001
+            pass
+    for sub in getattr(agent, "sub_agents", None) or []:
+        _register_progress_callbacks(sub, _seen)
+    for tool in getattr(agent, "tools", None) or []:
+        wrapped = getattr(tool, "agent", None)  # AgentTool wraps an agent
+        if wrapped is not None:
+            _register_progress_callbacks(wrapped, _seen)
 
 
 # --------------------------------------------------------------------------- #
@@ -866,3 +949,9 @@ concrete next step. Keep the user oriented; do not dump large code into chat."""
         AgentTool(agent=uat_loop),
     ],
 )
+
+# Wire the live progress feed across the whole agent tree (director → pipeline →
+# every phase/specialist). Because these are shared instances, the console
+# harnesses (run_pipeline.py / run_continue.py) that recompose them inherit the
+# callbacks too. See watch_progress.py to view the feed.
+_register_progress_callbacks(root_agent)
