@@ -1,0 +1,1 @@
+UAT not run. The `uat_open` and `uat_interact` tools are consistently failing with the error: 'Connection closed while reading from the driver'. This prevents any interaction with the application. This appears to be an issue with the testing environment, not the application itself.

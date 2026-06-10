@@ -1,0 +1,27 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: hsl(158, 25%, 30%);
+  --color-primary-light: hsl(158, 25%, 40%);
+  --color-primary-dark: hsl(158, 25%, 20%);
+  --color-accent: hsl(38, 90%, 65%);
+  --color-accent-dark: hsl(38, 90%, 55%);
+
+  --color-text: hsl(210, 15%, 20%);
+  --color-text-muted: hsl(210, 12%, 45%);
+  --color-surface: hsl(30, 20%, 98%);
+  --color-border: hsl(210, 15%, 88%);
+  --color-background: hsl(0, 0%, 100%);
+
+  --color-success: hsl(140, 50%, 45%);
+  --color-warning: hsl(45, 100%, 55%);
+  --color-error: hsl(0, 70%, 50%);
+}
+
+body {
+  color: var(--color-text);
+  background-color: var(--color-background);
+}

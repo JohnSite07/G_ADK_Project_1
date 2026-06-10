@@ -1,0 +1,15 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: 217 91% 60%;
+  --color-secondary: 282 44% 53%;
+  --color-accent: 318 81% 56%;
+  --color-background: 222 47% 7%;
+  --color-surface: 222 40% 12%;
+  --color-text-primary: 210 40% 98%;
+  --color-text-secondary: 210 30% 70%;
+  --color-text-muted: 210 20% 50%;
+}

@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-background: #000000;
+  --color-surface: #101015;
+  --color-glow-primary: #7F00FF;
+  --color-glow-secondary: #00BFFF;
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #A0A0B0;
+  --color-text-accent: var(--color-glow-secondary);
+  --color-button-bg: transparent;
+  --color-button-border: var(--color-text-secondary);
+  --color-button-text: var(--color-text-secondary);
+  --color-button-hover-bg: var(--color-surface);
+  --color-button-hover-border: var(--color-text-primary);
+  --color-button-hover-text: var(--color-text-primary);
+}
+
+body {
+  color: var(--color-text-secondary);
+  background: var(--color-background);
+}

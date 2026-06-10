@@ -1,0 +1,1 @@
+The project is now in a state where a manual review is required to move forward. The next steps would be to get feedback from the user on the current state of the website, and then, if approved, to deploy it. The outstanding issue of the broken UAT environment needs to be escalated to human developers for a permanent solution.

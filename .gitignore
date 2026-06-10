@@ -1,0 +1,36 @@
+# --- Secrets / local env ---
+.env
+.env.*
+!.env.example
+PATH-backup.txt
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# --- ADK runtime ---
+.adk/session.db
+*.db
+
+# --- Node / Next.js (regenerable) ---
+node_modules/
+.next/
+out/
+dist/
+.npm/
+*.tsbuildinfo
+
+# --- Terraform (keep .tf source, drop providers/state) ---
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db

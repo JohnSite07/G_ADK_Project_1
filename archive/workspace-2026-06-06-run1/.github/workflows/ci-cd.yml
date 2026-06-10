@@ -1,0 +1,80 @@
+
+name: Build, Test, and Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v1'
+
+      - name: 'Setup Terraform'
+        uses: hashicorp/setup-terraform@v2
+
+      - name: 'Terraform Init'
+        run: terraform init
+        working-directory: ./terraform
+
+      - name: 'Terraform Validate'
+        run: terraform validate
+        working-directory: ./terraform
+
+      - name: 'Terraform Plan'
+        run: terraform plan -out=tfplan
+        working-directory: ./terraform
+        env:
+          TF_VAR_gcp_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+          TF_VAR_repo_name: ${{ github.repository }}
+
+      # NOTE: The 'terraform apply' step is commented out to prevent automatic deployment.
+      # - name: 'Terraform Apply'
+      #   run: terraform apply -auto-approve tfplan
+      #   working-directory: ./terraform
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Frontend Dependencies
+        run: npm install
+        working-directory: ./frontend
+
+      - name: Build Frontend
+        run: npm run build
+        working-directory: ./frontend
+
+      - name: Deploy Frontend to GCS
+        run: gsutil -m rsync -r ./frontend/out gs://${{ secrets.GCP_PROJECT_ID }}-wilder-frontend
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/wilder-repo/wilder-backend:latest .
+          docker push us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/wilder-repo/wilder-backend:latest
+        working-directory: ./frontend
+
+      - name: Deploy Backend to Cloud Run
+        run: |
+          gcloud run deploy wilder-backend-service \
+            --image us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/wilder-repo/wilder-backend:latest \
+            --region us-central1 \
+            --allow-unauthenticated \
+            --add-cloudsql-instances $(terraform output -raw db_instance_connection_name)
+        working-directory: ./terraform
