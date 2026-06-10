@@ -50,16 +50,20 @@ your PATH, as long as it's the interpreter that has `google-adk` installed (`pyt
   The legacy `GOOGLE_API_KEY` is kept only as a fallback.
 - **Models / provider** (env-overridable): `GADK_PROVIDER` selects the PRO backend every phase uses —
   `claude` (**default**) or `gemini`.
-  - `claude` → **Anthropic Claude Opus 4.8 on Vertex AI** via ADK's `LiteLlm` wrapper (needs
-    `python -m pip install litellm`). Model id `GADK_CLAUDE_MODEL` (default `vertex_ai/claude-opus-4-8`),
-    region `GADK_CLAUDE_LOCATION` (default `us-east5`). **Prereqs on GCP:** enable the model in **Vertex AI
-    Model Garden → Anthropic** for your project, and use a **Claude-supported region** — Claude is *not*
-    served from `global`. If Opus 4.8 isn't in Model Garden yet, set `GADK_CLAUDE_MODEL=vertex_ai/claude-opus-4-7`
-    (or `…/claude-sonnet-4-6`). Opus 4.8 rejects `temperature`/`top_p`/`budget_tokens` (400) — phases run with
-    no sampling params; if you add a `generate_content_config`, leave those unset. Cost ≈ $5 / $25 per 1M
-    input/output tokens (vs Gemini 2.5 Pro's lower rates) — see git history for the cost analysis.
+  - `claude` → **Anthropic Claude Opus 4.8 on Vertex AI** via ADK's **native `Claude`** model
+    (`google.adk.models.anthropic_llm.Claude`, the `AnthropicVertex` SDK Google's Model Garden snippet uses).
+    Needs `python -m pip install "anthropic[vertex]"`. Model id `GADK_CLAUDE_MODEL` (default `claude-opus-4-8`,
+    **bare** — no `vertex_ai/` prefix), output cap `GADK_CLAUDE_MAX_TOKENS` (default 16000). It reads
+    `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` straight from `.env`, and **Opus 4.8 is served from the
+    `global` endpoint**, so the existing `GOOGLE_CLOUD_LOCATION=global` works — no separate region var. **One
+    GCP prereq:** enable the model in **Vertex AI Model Garden → Anthropic** for the project. ADK's `Claude`
+    sends **no** `temperature`/`top_p` and **no** `thinking` param by default, so Opus 4.8 (which 400s on
+    sampling params and on `enabled` thinking) works out of the box. To opt into adaptive thinking later, give
+    the agents a `generate_content_config` with `thinking_budget=-1`. If 4.8 isn't enabled, set
+    `GADK_CLAUDE_MODEL=claude-opus-4-7` (or `claude-sonnet-4-6`). Cost ≈ $5 / $25 per 1M input/output tokens
+    (vs Gemini 2.5 Pro's lower rates) — see git history for the cost analysis.
   - `gemini` → the original `GADK_PRO_MODEL` (default `gemini-2.5-pro`); flip with `GADK_PROVIDER=gemini` to
-    revert without code changes (and without needing `litellm`).
+    revert without code changes (and without needing the `anthropic` SDK).
   - `GADK_FLASH_MODEL` (default `gemini-2.5-flash`) stays Gemini. `agent.py` uses PRO for every phase.
 - **Playwright** (for the UAT agent's browser tools) is optional and lazy-imported. Before a UAT run, install
   it into the **same interpreter** as google-adk: `python -m pip install playwright ; python -m playwright install chromium`.

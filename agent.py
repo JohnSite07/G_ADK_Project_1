@@ -89,33 +89,35 @@ GADK_PROVIDER = os.getenv("GADK_PROVIDER", "claude").strip().lower()
 GEMINI_PRO_MODEL = os.getenv("GADK_PRO_MODEL", "gemini-2.5-pro")   # deep reasoning / codegen
 FLASH_MODEL = os.getenv("GADK_FLASH_MODEL", "gemini-2.5-flash")    # fast, high-volume (Gemini)
 
-# Claude-on-Vertex settings. IMPORTANT: Claude is NOT served from the "global"
-# location Gemini uses (GOOGLE_CLOUD_LOCATION) — it needs a real region, AND the
-# model must be enabled in Vertex AI Model Garden for your project. Override the
-# model id / region via GADK_CLAUDE_MODEL / GADK_CLAUDE_LOCATION. (If 4.8 isn't yet
-# in Model Garden for your region, try vertex_ai/claude-opus-4-7 or -sonnet-4-6.)
-CLAUDE_MODEL_ID = os.getenv("GADK_CLAUDE_MODEL", "vertex_ai/claude-opus-4-8")
-CLAUDE_LOCATION = os.getenv("GADK_CLAUDE_LOCATION", "us-east5")
+# Claude-on-Vertex model id (BARE — as Vertex / AnthropicVertex expect, no provider
+# prefix). Opus 4.8 is served from Vertex AI's **global** endpoint, so the existing
+# .env `GOOGLE_CLOUD_LOCATION=global` works as-is (ADK's Claude reads GOOGLE_CLOUD_
+# PROJECT/LOCATION directly). Just enable the model in Vertex AI Model Garden first.
+# If 4.8 isn't available, set GADK_CLAUDE_MODEL=claude-opus-4-7 (or claude-sonnet-4-6).
+CLAUDE_MODEL_ID = os.getenv("GADK_CLAUDE_MODEL", "claude-opus-4-8")
+CLAUDE_MAX_TOKENS = int(os.getenv("GADK_CLAUDE_MAX_TOKENS", "16000"))
 
 
 def _resolve_pro_model():
     """The model every phase runs on: a Gemini model-id string, or — when
-    GADK_PROVIDER=claude — a LiteLlm-wrapped Claude Opus 4.8 served from Vertex AI.
+    GADK_PROVIDER=claude — ADK's native Claude (the AnthropicVertex SDK) on Vertex AI.
     Construction is cheap (no network); the first real Vertex call happens at run time."""
     if GADK_PROVIDER == "claude":
         try:
-            from google.adk.models.lite_llm import LiteLlm
+            from google.adk.models.anthropic_llm import Claude
         except ImportError as e:  # noqa: BLE001
             raise RuntimeError(
-                "GADK_PROVIDER=claude needs LiteLLM: run `python -m pip install litellm`, "
-                "or set GADK_PROVIDER=gemini to use Vertex Gemini."
+                "GADK_PROVIDER=claude needs the Anthropic Vertex SDK: "
+                '`python -m pip install "anthropic[vertex]"`. '
+                "Or set GADK_PROVIDER=gemini to use Vertex Gemini."
             ) from e
-        # LiteLLM's Vertex backend reads these; Claude needs a region, not "global".
-        os.environ.setdefault("VERTEXAI_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", ""))
-        os.environ["VERTEXAI_LOCATION"] = CLAUDE_LOCATION
-        # Opus 4.8 rejects temperature/top_p/top_k and budget_tokens (400), so phases
-        # must not send sampling params — we leave each agent's generate config unset.
-        return LiteLlm(model=CLAUDE_MODEL_ID)
+        # ADK's Claude builds AsyncAnthropicVertex(project=GOOGLE_CLOUD_PROJECT,
+        # region=GOOGLE_CLOUD_LOCATION) — the same client + 'global' endpoint as the
+        # Model Garden snippet. It sends NO temperature/top_p and NO thinking param by
+        # default, so Opus 4.8 (which 400s on both) is happy out of the box. To enable
+        # adaptive thinking later, give the agents a generate_content_config with
+        # thinking_budget=-1 (and output_config.effort via the model's effort knob).
+        return Claude(model=CLAUDE_MODEL_ID, max_tokens=CLAUDE_MAX_TOKENS)
     return GEMINI_PRO_MODEL
 
 
