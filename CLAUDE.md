@@ -25,32 +25,56 @@ empty on import.
 
 ## Environment & tooling
 
-- **Python**: 3.13, default interpreter `C:\Program Files\Python313\python.exe`.
-- **google-adk**: 2.2.0, installed to the **per-user** site-packages
-  (`C:\Users\ASUS\AppData\Roaming\Python\Python313`). Upgrade with `python -m pip install --upgrade google-adk`.
-- **`adk` CLI**: at `C:\Users\ASUS\AppData\Roaming\Python\Python313\Scripts\adk.exe` (Scripts dir **not on
-  PATH** — use the full path or `python -m google.adk.cli`). Verify with `adk --version`.
+Paths here are intentionally generic — the repo can be cloned on any machine. Use whatever `python` is on
+your PATH, as long as it's the interpreter that has `google-adk` installed (`python -c "import google.adk"`).
+
+- **Python**: 3.13+. On Windows, install for all users with
+  `winget install --id Python.Python.3.13 --scope machine --override "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1"`
+  (lands in `C:\Program Files\Python313` and is added to PATH). Confirm with `python --version`. Windows
+  gotcha: the Microsoft Store `python` alias can shadow a real install — make sure `python` resolves to the
+  real interpreter (`PrependPath` handles this; otherwise disable the alias under *App execution aliases*).
+- **google-adk**: 2.2.0+. Install into that interpreter with `python -m pip install --upgrade google-adk`.
+  System-wide (into a `C:\Program Files` Python) needs an **elevated/admin** shell on Windows; otherwise add
+  `--user` for a per-user install. ADK is discovered by **import**, so it only needs to be importable by the
+  `python` you run — its on-disk location doesn't matter. Upgrade the same way.
+- **`adk` CLI**: prefer the portable form `python -m google.adk.cli ...`, which works regardless of whether
+  the interpreter's `Scripts/` dir is on PATH. The `adk.exe` shim lives in that `Scripts/` dir next to the
+  interpreter. Verify with `adk --version` or `python -m google.adk.cli --version`.
+- **`.env` is NOT committed** (it holds secrets; it's git-ignored). On a fresh clone you must create
+  `G_ADK_Project_1/.env` before running — set the Vertex keys below. `agent.py` loads it by absolute path
+  with `override=True`, so the project resolves no matter the cwd.
 - **Model access = Vertex AI** (`.env`): `GOOGLE_GENAI_USE_VERTEXAI=TRUE`,
-  `GOOGLE_CLOUD_PROJECT=project-815cbb1b-9505-4ce3-bc4`, `GOOGLE_CLOUD_LOCATION=global` (widest model
-  availability). `GOOGLE_CLOUD_REGION`/`ZONE` (Toronto) are for the generated Terraform, not the SDK.
-  Vertex uses **ADC**, not the API key: run `gcloud auth application-default login` and ensure the Vertex AI
-  API is enabled on the project. The legacy `GOOGLE_API_KEY` is kept only as a fallback.
-- **Models** (env-overridable): `GADK_PRO_MODEL` (default `gemini-2.5-pro`), `GADK_FLASH_MODEL`
-  (default `gemini-2.5-flash`). `agent.py` uses PRO for every phase.
-- **Playwright** (for the UAT agent's browser tools) is optional and lazy-imported. Before a UAT run:
-  `python -m pip install playwright ; python -m playwright install chromium`.
-- **Known machine issue**: pip/venv/`npm` operations can hang when the WMI service wedges; fix by restarting
-  `Winmgmt` (needs an **admin** shell: `Restart-Service Winmgmt -Force`). Suspect this if an install stalls.
+  `GOOGLE_CLOUD_PROJECT=<your-gcp-project-id>`, `GOOGLE_CLOUD_LOCATION=global` (widest model availability).
+  `GOOGLE_CLOUD_REGION`/`ZONE` are for the generated Terraform, not the SDK. Vertex uses **ADC**, not the API
+  key: run `gcloud auth application-default login` and ensure the Vertex AI API is enabled on the project.
+  The legacy `GOOGLE_API_KEY` is kept only as a fallback.
+- **Models / provider** (env-overridable): `GADK_PROVIDER` selects the PRO backend every phase uses —
+  `claude` (**default**) or `gemini`.
+  - `claude` → **Anthropic Claude Opus 4.8 on Vertex AI** via ADK's `LiteLlm` wrapper (needs
+    `python -m pip install litellm`). Model id `GADK_CLAUDE_MODEL` (default `vertex_ai/claude-opus-4-8`),
+    region `GADK_CLAUDE_LOCATION` (default `us-east5`). **Prereqs on GCP:** enable the model in **Vertex AI
+    Model Garden → Anthropic** for your project, and use a **Claude-supported region** — Claude is *not*
+    served from `global`. If Opus 4.8 isn't in Model Garden yet, set `GADK_CLAUDE_MODEL=vertex_ai/claude-opus-4-7`
+    (or `…/claude-sonnet-4-6`). Opus 4.8 rejects `temperature`/`top_p`/`budget_tokens` (400) — phases run with
+    no sampling params; if you add a `generate_content_config`, leave those unset. Cost ≈ $5 / $25 per 1M
+    input/output tokens (vs Gemini 2.5 Pro's lower rates) — see git history for the cost analysis.
+  - `gemini` → the original `GADK_PRO_MODEL` (default `gemini-2.5-pro`); flip with `GADK_PROVIDER=gemini` to
+    revert without code changes (and without needing `litellm`).
+  - `GADK_FLASH_MODEL` (default `gemini-2.5-flash`) stays Gemini. `agent.py` uses PRO for every phase.
+- **Playwright** (for the UAT agent's browser tools) is optional and lazy-imported. Before a UAT run, install
+  it into the **same interpreter** as google-adk: `python -m pip install playwright ; python -m playwright install chromium`.
+- **Known Windows issue**: pip/venv/`npm` operations can hang when the WMI service wedges; fix by restarting
+  `Winmgmt` from an **admin** shell (`Restart-Service Winmgmt -Force`). Suspect this if an install stalls.
 
 ## Common commands
 
 ADK discovers an agent by importing a package exposing a module-level `root_agent`. This folder is that
 package (`__init__.py` → `from . import agent`; `agent.py` defines `root_agent`). **Run from the parent
-directory** (`...\Google_ADK`) so `G_ADK_Project_1` is importable, and `agent.py` loads its own `.env` by
-absolute path so the Vertex project resolves regardless of cwd.
+directory** — the folder that *contains* `G_ADK_Project_1` — so the package is importable; `agent.py` loads
+its own `.env` by absolute path so the Vertex project resolves regardless of cwd.
 
 ```powershell
-cd "c:\Users\ASUS\Desktop\Projects\Agents\Google_ADK"
+cd <parent-of-G_ADK_Project_1>    # the directory that CONTAINS the package folder
 python -m google.adk.cli web      # dev UI (chat + Events/Traces/State) at http://localhost:8000
 python -m google.adk.cli run G_ADK_Project_1
 ```
@@ -58,7 +82,7 @@ python -m google.adk.cli run G_ADK_Project_1
 Console harnesses (avoid the web server wedging on long builds; stream phases; Ctrl+C is clean):
 
 ```powershell
-cd "c:\Users\ASUS\Desktop\Projects\Agents\Google_ADK\G_ADK_Project_1"
+cd <parent-of-G_ADK_Project_1>\G_ADK_Project_1    # i.e. the package folder itself
 python smoke_test.py     # one agent (requirements_analyst) — fastest health check
 python run_pipeline.py   # full studio_pipeline on a default/CLI brief
 python run_continue.py   # RESUME from existing workspace/docs/ (skips requirements+design)
